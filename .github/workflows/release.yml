@@ -1,0 +1,109 @@
+name: Release
+
+# Reusable: generate notes from BREAKING/feat/fix commits since the last
+# release, tag vX.Y.Z, force-move the vN major tag, and publish a GitHub
+# Release with the notes as the body.
+#
+#   on:
+#     workflow_dispatch:
+#       inputs: { from: …, to: …, version: … }
+#   jobs:
+#     release:
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/release.yml@v1
+#       with:
+#         from: ${{ inputs.from }}
+#         to: ${{ inputs.to }}
+#         version: ${{ inputs.version }}
+#
+# Releases are cut from main AFTER the merge, not from a PR. Squash and rebase
+# merges both rewrite the commit SHA, so a tag created at a PR head would point
+# at a commit that never lands on main. Tags are not branch-protected, which is
+# what lets this run without a PR/approval dance.
+on:
+  workflow_call:
+    inputs:
+      from:
+        description: "Base ref/commit for the notes (default: last release tag)."
+        type: string
+        required: false
+        default: ""
+      to:
+        description: "Head ref/commit for the notes (default: HEAD)."
+        type: string
+        required: false
+        default: ""
+      version:
+        description: "Explicit version, e.g. 1.2.0 (default: computed from commits)."
+        type: string
+        required: false
+        default: ""
+      move-major-tag:
+        description: Force-move the vN tag so consumers on @vN get this release.
+        type: boolean
+        required: false
+        default: true
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    outputs:
+      version:
+        description: The version released, empty if there was nothing to release.
+        value: ${{ jobs.release.outputs.version }}
+      released:
+        description: "true if a release was created."
+        value: ${{ jobs.release.outputs.released }}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ${{ inputs.runs-on }}
+    outputs:
+      version: ${{ steps.notes.outputs.version }}
+      released: ${{ steps.notes.outputs.changed }}
+    steps:
+      - name: Checkout
+        uses: lite-actions/git-checkout@v1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Generate release notes
+        id: notes
+        uses: lite-actions/release-notes@v1
+        with:
+          from: ${{ inputs.from }}
+          to: ${{ inputs.to }}
+          version: ${{ inputs.version }}
+
+      - name: Tag, move major tag, and publish release
+        if: steps.notes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.notes.outputs.version }}
+          NOTES_FILE: ${{ steps.notes.outputs.file }}
+          MOVE_MAJOR: ${{ inputs.move-major-tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          tag="v${VERSION}"
+          git tag -a "${tag}" -m "Release ${VERSION}"
+          git push origin "${tag}"
+          if [ "${MOVE_MAJOR}" = "true" ]; then
+            major="v${VERSION%%.*}"
+            git tag -f -a "${major}" -m "${major} -> ${VERSION}"
+            git push origin -f "${major}"
+          fi
+          # The generated notes file is the GitHub Release body.
+          gh release create "${tag}" --title "${VERSION}" --notes-file "${NOTES_FILE}"
+
+      - name: Nothing to release
+        if: steps.notes.outputs.changed != 'true'
+        run: echo "No BREAKING / feat / fix commits since the last release; nothing to do."

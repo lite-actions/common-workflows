@@ -1,0 +1,90 @@
+name: Conventional Validation
+
+# Reusable: validate Conventional Commit messages and branch names on a PR.
+#
+#   on:
+#     pull_request:
+#       types: [opened, synchronize, reopened, edited]
+#   jobs:
+#     validate:
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/conventional-validation.yml@v1
+#
+# NOTE: conventional-validator itself cannot use this workflow for its own PRs.
+# It validates with `uses: ./` to dogfood the working tree, and inside a called
+# workflow `./` resolves to THIS repository, not the caller's. It has to keep a
+# local conventional-validation.yml. Same applies to any repo that wants to test
+# its own action rather than the last release.
+on:
+  workflow_call:
+    inputs:
+      validate-commits:
+        type: string
+        required: false
+        default: "true"
+      validate-branch:
+        type: string
+        required: false
+        default: "true"
+      validate-body:
+        type: string
+        required: false
+        default: "true"
+      branch-types:
+        description: >-
+          Space-separated branch prefixes to accept. Empty uses the action's
+          own default.
+        type: string
+        required: false
+        default: ""
+      allow-underscores:
+        description: Accept underscores in branch names (Dependabot uses them).
+        type: string
+        required: false
+        default: "false"
+      base-ref:
+        description: >-
+          Base ref for the commit range when run manually (e.g. origin/main).
+          Empty checks only the PR range.
+        type: string
+        required: false
+        default: ""
+      skip-dependabot:
+        description: >-
+          Skip validation for Dependabot, still reporting the check as passing.
+          Its branch and commit naming is bot-controlled. The alternative is to
+          accept it via branch-types + allow-underscores instead — see
+          release-notes, which takes that route.
+        type: boolean
+        required: false
+        default: true
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout
+        uses: lite-actions/git-checkout@v1
+        with:
+          fetch-depth: 0
+
+      - name: Skip for Dependabot
+        if: inputs.skip-dependabot && github.actor == 'dependabot[bot]'
+        run: echo "Dependabot PR — conventional validation skipped."
+
+      - name: Validate conventional commits & branch
+        if: ${{ !(inputs.skip-dependabot && github.actor == 'dependabot[bot]') }}
+        uses: lite-actions/conventional-validator@v1
+        with:
+          validate-commits: ${{ inputs.validate-commits }}
+          validate-branch: ${{ inputs.validate-branch }}
+          validate-body: ${{ inputs.validate-body }}
+          branch-types: ${{ inputs.branch-types }}
+          allow-underscores: ${{ inputs.allow-underscores }}
+          base-ref: ${{ inputs.base-ref }}

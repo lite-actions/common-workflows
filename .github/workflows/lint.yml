@@ -1,0 +1,51 @@
+name: Lint
+
+# Reusable: shellcheck a repository's scripts.
+#
+#   jobs:
+#     lint:
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/lint.yml@v1
+#
+# `paths` is a glob list expanded by the runner's shell. An unmatched glob is
+# passed through literally and shellcheck then fails on the missing file, so
+# only list directories the caller actually has.
+on:
+  workflow_call:
+    inputs:
+      paths:
+        description: Space-separated globs to check.
+        type: string
+        required: false
+        default: "scripts/*.sh tests/*.sh"
+      severity:
+        description: "Minimum severity to fail on: error, warning, info, style."
+        type: string
+        required: false
+        default: warning
+      runs-on:
+        description: Runner label.
+        type: string
+        required: false
+        default: ubuntu-latest
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout
+        uses: lite-actions/git-checkout@v1
+
+      - name: ShellCheck scripts
+        env:
+          PATHS: ${{ inputs.paths }}
+          SEVERITY: ${{ inputs.severity }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # -x follows sourced files; warning severity ignores info/style noise
+          # (e.g. dynamic source paths shellcheck can't resolve statically).
+          # PATHS is deliberately unquoted so the globs expand.
+          # shellcheck disable=SC2086
+          shellcheck -x --severity="${SEVERITY}" ${PATHS}

@@ -1,0 +1,130 @@
+name: Changelog
+
+# Reusable: on merge to main, append the push's commits to CHANGELOG.md,
+# regenerate RELEASE_NOTES.md, and land both via an auto-merged PR (main is
+# protected, so direct pushes are rejected).
+#
+#   on:
+#     push:
+#       branches: [main]
+#       paths-ignore:
+#         - CHANGELOG.md
+#         - RELEASE_NOTES.md
+#   jobs:
+#     changelog:
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/changelog.yml@v1
+#       secrets: inherit
+#
+# The trigger and its paths-ignore stay in the caller — `workflow_call` cannot
+# declare them, and without the paths-ignore the changelog PR's own merge
+# retriggers this workflow in a loop.
+#
+# The two actions read DIFFERENT ranges and that is deliberate:
+#   conventional-changelog  push `before`..`after`  — this push only
+#   release-notes           last vX.Y.Z tag..HEAD   — since the last release
+on:
+  workflow_call:
+    inputs:
+      changelog-file:
+        type: string
+        required: false
+        default: CHANGELOG.md
+      release-notes-file:
+        type: string
+        required: false
+        default: RELEASE_NOTES.md
+      title:
+        description: Heading used when the changelog file is first created.
+        type: string
+        required: false
+        default: Changelog
+      runs-on:
+        type: string
+        required: false
+        default: ubuntu-latest
+    secrets:
+      CHANGELOG_BOT_TOKEN:
+        description: >-
+          User PAT so the branch push / PR creation act as a real user and
+          therefore trigger the required checks (GITHUB_TOKEN would not).
+        required: false
+      CHANGELOG_APPROVE_TOKEN:
+        description: >-
+          Second identity used to approve. A PR author or last pusher cannot
+          self-approve, and GITHUB_TOKEN cannot approve at all.
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog
+  cancel-in-progress: false
+
+jobs:
+  changelog:
+    runs-on: ${{ inputs.runs-on }}
+    steps:
+      - name: Checkout
+        uses: lite-actions/git-checkout@v1
+        with:
+          fetch-depth: 0
+          # release-notes resolves "since the last release" from vX.Y.Z tags,
+          # and git-checkout does not imply tags at fetch-depth 0.
+          fetch-tags: true
+          # Falls back to github.token before the secret is configured, so the
+          # job checks out and then gracefully skips instead of erroring.
+          token: ${{ secrets.CHANGELOG_BOT_TOKEN || github.token }}
+
+      - name: Update changelog
+        id: changelog
+        uses: lite-actions/conventional-changelog@v1
+        with:
+          title: ${{ inputs.title }}
+          output-file: ${{ inputs.changelog-file }}
+
+      - name: Generate release notes
+        if: steps.changelog.outputs.changed == 'true'
+        uses: lite-actions/release-notes@v1
+        with:
+          output-file: ${{ inputs.release-notes-file }}
+
+      - name: Open, approve and auto-merge changelog PR
+        if: steps.changelog.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CHANGELOG_BOT_TOKEN }}
+          APPROVE_TOKEN: ${{ secrets.CHANGELOG_APPROVE_TOKEN }}
+          CHANGELOG_FILE: ${{ inputs.changelog-file }}
+          NOTES_FILE: ${{ inputs.release-notes-file }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ] || [ -z "${APPROVE_TOKEN:-}" ]; then
+            echo "::warning::CHANGELOG_BOT_TOKEN / CHANGELOG_APPROVE_TOKEN not set; skipping changelog PR."
+            exit 0
+          fi
+          branch="chore/changelog-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "${branch}"
+          git add "${CHANGELOG_FILE}" "${NOTES_FILE}"
+          git commit --no-verify -m "docs(changelog): update changelog and release notes"
+          git push origin "${branch}"
+
+          gh pr create --base main --head "${branch}" \
+            --title "docs(changelog): update changelog and release notes" \
+            --body "Automated changelog + release-notes update from the latest merge to \`main\`."
+
+          GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
+            --body "Automated approval of changelog update."
+
+          gh pr merge "${branch}" --auto --rebase --delete-branch
+
+      - name: Clean up on failure
+        if: failure() && steps.changelog.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.CHANGELOG_BOT_TOKEN }}
+        run: |
+          branch="chore/changelog-${GITHUB_RUN_ID}"
+          gh pr close "${branch}" --delete-branch 2>/dev/null || true
+          gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}" 2>/dev/null || true
+          echo "Cleaned up ${branch} (if it existed)."
