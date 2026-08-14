@@ -1,0 +1,111 @@
+name: Changelog
+description: >-
+  Append the push's commits to CHANGELOG.md, regenerate RELEASE_NOTES.md, and
+  land both via an auto-merged PR. Assumes the caller has checked out with
+  fetch-depth 0 and fetch-tags true.
+author: lite-actions
+
+inputs:
+  changelog-file:
+    description: File to write the changelog to.
+    required: false
+    default: CHANGELOG.md
+  release-notes-file:
+    description: File to write the release notes to.
+    required: false
+    default: RELEASE_NOTES.md
+  title:
+    description: Heading used when the changelog file is first created.
+    required: false
+    default: Changelog
+  bot-token:
+    description: >-
+      User PAT so the branch push and PR creation act as a real user and
+      therefore trigger the required checks. GITHUB_TOKEN would not.
+    required: false
+    default: ""
+  approve-token:
+    description: >-
+      Second identity used to approve. A PR author or last pusher cannot
+      self-approve, and GITHUB_TOKEN cannot approve at all.
+    required: false
+    default: ""
+
+outputs:
+  changed:
+    description: "true if any commits were logged."
+    value: ${{ steps.changelog.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    # Guards the silent failure mode: release-notes resolves "since the last
+    # release" from vX.Y.Z tags, and git-checkout appends --no-tags unless
+    # fetch-tags is true, even at fetch-depth 0. Without this the notes version
+    # from 0.0.0 and nothing looks wrong. Only errors when the remote HAS tags
+    # and the checkout does not, so a repo before its first release is fine.
+    - name: Verify tags were fetched
+      shell: bash
+      run: |
+        set -euo pipefail
+        local_tags="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n1 || true)"
+        remote_tags="$(git ls-remote --tags origin 'v*.*.*' 2>/dev/null | head -n1 || true)"
+        if [ -z "${local_tags}" ] && [ -n "${remote_tags}" ]; then
+          echo "::error::The remote has vX.Y.Z tags but none were fetched. release-notes would version from 0.0.0. Check out with fetch-tags: true — git-checkout does not imply tags at fetch-depth 0."
+          exit 1
+        fi
+
+    - name: Update changelog
+      id: changelog
+      uses: lite-actions/conventional-changelog@v1
+      with:
+        title: ${{ inputs.title }}
+        output-file: ${{ inputs.changelog-file }}
+
+    - name: Generate release notes
+      if: steps.changelog.outputs.changed == 'true'
+      uses: lite-actions/release-notes@v1
+      with:
+        output-file: ${{ inputs.release-notes-file }}
+
+    - name: Open, approve and auto-merge changelog PR
+      if: steps.changelog.outputs.changed == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.bot-token }}
+        APPROVE_TOKEN: ${{ inputs.approve-token }}
+        CHANGELOG_FILE: ${{ inputs.changelog-file }}
+        NOTES_FILE: ${{ inputs.release-notes-file }}
+      run: |
+        set -euo pipefail
+        if [ -z "${GH_TOKEN:-}" ] || [ -z "${APPROVE_TOKEN:-}" ]; then
+          echo "::warning::bot-token / approve-token not set; skipping changelog PR."
+          exit 0
+        fi
+        branch="chore/changelog-${GITHUB_RUN_ID}"
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git checkout -b "${branch}"
+        git add "${CHANGELOG_FILE}" "${NOTES_FILE}"
+        git commit --no-verify -m "docs(changelog): update changelog and release notes"
+        git push origin "${branch}"
+
+        gh pr create --base main --head "${branch}" \
+          --title "docs(changelog): update changelog and release notes" \
+          --body "Automated changelog + release-notes update from the latest merge to \`main\`."
+
+        GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
+          --body "Automated approval of changelog update."
+
+        gh pr merge "${branch}" --auto --rebase --delete-branch
+
+    - name: Clean up on failure
+      if: failure() && steps.changelog.outputs.changed == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.bot-token }}
+      run: |
+        branch="chore/changelog-${GITHUB_RUN_ID}"
+        gh pr close "${branch}" --delete-branch 2>/dev/null || true
+        gh api -X DELETE "repos/${GITHUB_REPOSITORY}/git/refs/heads/${branch}" 2>/dev/null || true
+        echo "Cleaned up ${branch} (if it existed)."

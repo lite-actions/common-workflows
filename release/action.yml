@@ -1,0 +1,90 @@
+name: Release
+description: >-
+  Generate notes from BREAKING/feat/fix commits since the last release, tag
+  vX.Y.Z, force-move the vN major tag, and publish a GitHub Release. Assumes
+  the caller has checked out with fetch-depth 0 and fetch-tags true, and grants
+  the job contents: write.
+author: lite-actions
+
+inputs:
+  from:
+    description: "Base ref/commit for the notes (default: last release tag)."
+    required: false
+    default: ""
+  to:
+    description: "Head ref/commit for the notes (default: HEAD)."
+    required: false
+    default: ""
+  version:
+    description: "Explicit version, e.g. 1.2.0 (default: computed from commits)."
+    required: false
+    default: ""
+  move-major-tag:
+    description: Force-move the vN tag so consumers on @vN get this release.
+    required: false
+    default: "true"
+  github-token:
+    description: Token used to create the GitHub Release.
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  version:
+    description: The version released, empty if there was nothing to release.
+    value: ${{ steps.notes.outputs.version }}
+  released:
+    description: "true if a release was created."
+    value: ${{ steps.notes.outputs.changed }}
+
+runs:
+  using: composite
+  steps:
+    # See the note in changelog/action.yml — without tags the computed version
+    # restarts from 0.0.0, which here would tag a bogus vX.Y.Z and move vN onto
+    # it. Only errors when the remote has tags and the checkout does not.
+    - name: Verify tags were fetched
+      shell: bash
+      run: |
+        set -euo pipefail
+        local_tags="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | head -n1 || true)"
+        remote_tags="$(git ls-remote --tags origin 'v*.*.*' 2>/dev/null | head -n1 || true)"
+        if [ -z "${local_tags}" ] && [ -n "${remote_tags}" ]; then
+          echo "::error::The remote has vX.Y.Z tags but none were fetched. The release would be versioned from 0.0.0. Check out with fetch-tags: true — git-checkout does not imply tags at fetch-depth 0."
+          exit 1
+        fi
+
+    - name: Generate release notes
+      id: notes
+      uses: lite-actions/release-notes@v1
+      with:
+        from: ${{ inputs.from }}
+        to: ${{ inputs.to }}
+        version: ${{ inputs.version }}
+
+    - name: Tag, move major tag, and publish release
+      if: steps.notes.outputs.changed == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        VERSION: ${{ steps.notes.outputs.version }}
+        NOTES_FILE: ${{ steps.notes.outputs.file }}
+        MOVE_MAJOR: ${{ inputs.move-major-tag }}
+      run: |
+        set -euo pipefail
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        tag="v${VERSION}"
+        git tag -a "${tag}" -m "Release ${VERSION}"
+        git push origin "${tag}"
+        if [ "${MOVE_MAJOR}" = "true" ]; then
+          major="v${VERSION%%.*}"
+          git tag -f -a "${major}" -m "${major} -> ${VERSION}"
+          git push origin -f "${major}"
+        fi
+        # The generated notes file is the GitHub Release body.
+        gh release create "${tag}" --title "${VERSION}" --notes-file "${NOTES_FILE}"
+
+    - name: Nothing to release
+      if: steps.notes.outputs.changed != 'true'
+      shell: bash
+      run: echo "No BREAKING / feat / fix commits since the last release; nothing to do."

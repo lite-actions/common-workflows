@@ -1,0 +1,38 @@
+name: Shell Lint
+description: >-
+  ShellCheck a repository's scripts. Assumes the caller has already checked out
+  the repository.
+author: lite-actions
+
+inputs:
+  paths:
+    description: >-
+      Space-separated globs to check. Globs are expanded by the shell; a glob
+      that matches nothing is passed through literally and ShellCheck then
+      fails on the missing file, so only list directories the repo has.
+    required: false
+    default: "scripts/*.sh tests/*.sh"
+  severity:
+    description: "Minimum severity to fail on: error, warning, info, style."
+    required: false
+    default: warning
+
+runs:
+  using: composite
+  steps:
+    - name: Install ShellCheck
+      shell: bash
+      run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+
+    - name: ShellCheck scripts
+      shell: bash
+      env:
+        PATHS: ${{ inputs.paths }}
+        SEVERITY: ${{ inputs.severity }}
+      run: |
+        set -euo pipefail
+        # -x follows sourced files; warning severity ignores info/style noise
+        # (e.g. dynamic source paths shellcheck can't resolve statically).
+        # PATHS is deliberately unquoted so the globs expand.
+        # shellcheck disable=SC2086
+        shellcheck -x --severity="${SEVERITY}" ${PATHS}

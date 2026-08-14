@@ -1,0 +1,22 @@
+name: Shell Test
+description: >-
+  Run a repository's shell test suite. Assumes the caller has already checked
+  out the repository.
+author: lite-actions
+
+inputs:
+  test-command:
+    description: Command that runs the suite.
+    required: false
+    default: "bash tests/test.sh"
+
+runs:
+  using: composite
+  steps:
+    - name: Run script tests
+      shell: bash
+      env:
+        TEST_COMMAND: ${{ inputs.test-command }}
+      run: |
+        set -euo pipefail
+        eval "${TEST_COMMAND}"

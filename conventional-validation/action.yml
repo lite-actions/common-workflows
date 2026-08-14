@@ -1,0 +1,62 @@
+name: Conventional Validation
+description: >-
+  Validate Conventional Commit messages and branch names on a pull request.
+  Assumes the caller has checked out with fetch-depth 0 so the commit range is
+  resolvable.
+author: lite-actions
+
+inputs:
+  validate-commits:
+    description: Validate commit message format.
+    required: false
+    default: "true"
+  validate-branch:
+    description: Validate the branch name.
+    required: false
+    default: "true"
+  validate-body:
+    description: Require a commit body.
+    required: false
+    default: "true"
+  branch-types:
+    description: >-
+      Space-separated branch prefixes to accept. Empty uses the validator's own
+      default.
+    required: false
+    default: ""
+  allow-underscores:
+    description: Accept underscores in branch names (Dependabot uses them).
+    required: false
+    default: "false"
+  base-ref:
+    description: >-
+      Base ref for the commit range when run manually (e.g. origin/main).
+      Empty checks only the pull request range.
+    required: false
+    default: ""
+  skip-dependabot:
+    description: >-
+      Skip validation for Dependabot, so a required check still reports as
+      passing. Its branch and commit naming is bot-controlled. The alternative
+      is to accept it via branch-types + allow-underscores instead.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Skip for Dependabot
+      if: inputs.skip-dependabot == 'true' && github.actor == 'dependabot[bot]'
+      shell: bash
+      run: echo "Dependabot PR — conventional validation skipped."
+
+    - name: Validate conventional commits & branch
+      if: ${{ !(inputs.skip-dependabot == 'true' && github.actor == 'dependabot[bot]') }}
+      uses: lite-actions/conventional-validator@v1
+      with:
+        validate-commits: ${{ inputs.validate-commits }}
+        validate-branch: ${{ inputs.validate-branch }}
+        validate-body: ${{ inputs.validate-body }}
+        branch-types: ${{ inputs.branch-types }}
+        allow-underscores: ${{ inputs.allow-underscores }}
+        base-ref: ${{ inputs.base-ref }}
