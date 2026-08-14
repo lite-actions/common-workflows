@@ -4,7 +4,7 @@ name: Lint
 #
 #   jobs:
 #     lint:
-#       uses: lite-actions/lite-actions-workflows/.github/workflows/lint.yml@v1
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/common-shell-lint.yml@v1
 #
 # `paths` is a glob list expanded by the runner's shell. An unmatched glob is
 # passed through literally and shellcheck then fails on the missing file, so

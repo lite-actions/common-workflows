@@ -7,7 +7,7 @@ name: Conventional Validation
 #       types: [opened, synchronize, reopened, edited]
 #   jobs:
 #     validate:
-#       uses: lite-actions/lite-actions-workflows/.github/workflows/conventional-validation.yml@v1
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/common-conventional-validation.yml@v1
 #
 # NOTE: conventional-validator itself cannot use this workflow for its own PRs.
 # It validates with `uses: ./` to dogfood the working tree, and inside a called

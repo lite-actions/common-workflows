@@ -12,7 +12,7 @@ name: Changelog
 #         - RELEASE_NOTES.md
 #   jobs:
 #     changelog:
-#       uses: lite-actions/lite-actions-workflows/.github/workflows/changelog.yml@v1
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/internal-changelog.yml@v1
 #       secrets: inherit
 #
 # The trigger and its paths-ignore stay in the caller — `workflow_call` cannot

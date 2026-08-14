@@ -9,7 +9,7 @@ name: Release
 #       inputs: { from: …, to: …, version: … }
 #   jobs:
 #     release:
-#       uses: lite-actions/lite-actions-workflows/.github/workflows/release.yml@v1
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/internal-release.yml@v1
 #       with:
 #         from: ${{ inputs.from }}
 #         to: ${{ inputs.to }}

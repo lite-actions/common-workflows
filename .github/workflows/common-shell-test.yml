@@ -4,7 +4,7 @@ name: Test
 #
 #   jobs:
 #     test:
-#       uses: lite-actions/lite-actions-workflows/.github/workflows/test.yml@v1
+#       uses: lite-actions/lite-actions-workflows/.github/workflows/common-shell-test.yml@v1
 #
 # Defaults match what the action repos already do, so a caller that passes
 # nothing gets the behaviour it has today.
