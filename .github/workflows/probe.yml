@@ -1,0 +1,7 @@
+name: Probe subdirectory reusable workflow
+on:
+  push:
+    branches: [chore/probe-subdir-workflows]
+jobs:
+  lint:
+    uses: ./.github/workflows/common/shell-lint.yml
