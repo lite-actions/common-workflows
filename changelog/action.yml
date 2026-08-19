@@ -83,12 +83,35 @@ runs:
           exit 0
         fi
         branch="chore/changelog-${GITHUB_RUN_ID}"
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git checkout -b "${branch}"
-        git add "${CHANGELOG_FILE}" "${NOTES_FILE}"
-        git commit --no-verify -m "docs(changelog): update changelog and release notes"
-        git push origin "${branch}"
+        head_sha="$(git rev-parse HEAD)"
+
+        # Branch off the current tip, then commit through the API rather than
+        # with git. A branch requiring signed commits rejects anything a runner
+        # commits, because there is no signing key there - and the PR is blocked
+        # outright, before a merge strategy is chosen, so --squash cannot rescue
+        # it. Commits created via createCommitOnBranch are signed by GitHub, and
+        # unlike the REST contents endpoint it takes both files in one commit.
+        gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
+          -f ref="refs/heads/${branch}" -f sha="${head_sha}" >/dev/null
+
+        # base64 -w0 is GNU-only; this form also works on macOS runners.
+        jq -n \
+          --arg repo "${GITHUB_REPOSITORY}" \
+          --arg branch "${branch}" \
+          --arg oid "${head_sha}" \
+          --arg clpath "${CHANGELOG_FILE}" \
+          --arg clbody "$(base64 < "${CHANGELOG_FILE}" | tr -d '\n')" \
+          --arg rnpath "${NOTES_FILE}" \
+          --arg rnbody "$(base64 < "${NOTES_FILE}" | tr -d '\n')" \
+          '{query:"mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}",
+            variables:{input:{
+              branch:{repositoryNameWithOwner:$repo,branchName:$branch},
+              expectedHeadOid:$oid,
+              message:{headline:"docs(changelog): update changelog and release notes"},
+              fileChanges:{additions:[
+                {path:$clpath,contents:$clbody},
+                {path:$rnpath,contents:$rnbody}]}}}}' \
+          | gh api graphql --input - >/dev/null
 
         gh pr create --base main --head "${branch}" \
           --title "docs(changelog): update changelog and release notes" \
@@ -97,7 +120,7 @@ runs:
         GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
           --body "Automated approval of changelog update."
 
-        gh pr merge "${branch}" --auto --rebase --delete-branch
+        gh pr merge "${branch}" --auto --squash --delete-branch
 
     - name: Clean up on failure
       if: failure() && steps.changelog.outputs.changed == 'true'
