@@ -89,6 +89,26 @@ Leave `notes-title` empty and `release-notes` falls back to the repository name
 from `GITHUB_REPO`. Set it where the repo slug is not what readers should see —
 `versioning-tests` wants "Versioning Tests", not `versioning-tests`.
 
+### Merge method
+
+The changelog PR is squash-merged by default. Pass `merge-method` where the
+repository does not allow that:
+
+```yaml
+- uses: lite-actions/common-workflows/changelog@v1
+  with:
+    merge-method: rebase
+```
+
+**It must be a method the repository actually enables.** `gh pr merge` fails
+outright rather than falling back, so a repo with squash merging turned off will
+fail every changelog cycle on the merge step, after the PR has already been
+opened and approved. Check with:
+
+```bash
+gh api repos/{owner}/{repo} --jq '{squash: .allow_squash_merge, rebase: .allow_rebase_merge, merge: .allow_merge_commit}'
+```
+
 ### Secrets
 
 Composite actions cannot read `secrets` directly; pass them as inputs.
