@@ -33,6 +33,13 @@ inputs:
       therefore trigger the required checks. GITHUB_TOKEN would not.
     required: false
     default: ""
+  merge-method:
+    description: >-
+      How to merge the changelog PR: squash, rebase or merge. Must be a method
+      the repository actually allows - a repo with squash merging disabled will
+      fail the merge outright, not fall back.
+    required: false
+    default: squash
   approve-token:
     description: >-
       Second identity used to approve. A PR author or last pusher cannot
@@ -115,8 +122,16 @@ runs:
         GH_TOKEN: ${{ inputs.bot-token }}
         APPROVE_TOKEN: ${{ inputs.approve-token }}
         BRANCH: ${{ steps.branch.outputs.branch }}
+        MERGE_METHOD: ${{ inputs.merge-method }}
       run: |
         set -euo pipefail
+        case "${MERGE_METHOD}" in
+          squash|rebase|merge) ;;
+          *)
+            echo "::error::merge-method must be squash, rebase or merge, got '${MERGE_METHOD}'."
+            exit 1
+            ;;
+        esac
         branch="${BRANCH}"
         gh pr create --base main --head "${branch}" \
           --title "docs(changelog): update changelog and release notes" \
@@ -125,7 +140,7 @@ runs:
         GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
           --body "Automated approval of changelog update."
 
-        gh pr merge "${branch}" --auto --squash --delete-branch
+        gh pr merge "${branch}" --auto "--${MERGE_METHOD}" --delete-branch
 
     - name: Clean up on failure
       if: failure() && steps.changelog.outputs.changed == 'true'
