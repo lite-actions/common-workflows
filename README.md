@@ -76,6 +76,19 @@ first release has no tags either way and is unaffected.
 
 `conventional-validation` needs `fetch-depth: 0` so the commit range resolves.
 
+### Two different titles
+
+`changelog` writes two documents, and they take separate headings:
+
+| input | goes to | writes |
+| --- | --- | --- |
+| `title` | `conventional-changelog` | the `CHANGELOG.md` heading, on first creation |
+| `notes-title` | `release-notes` | the `RELEASE_NOTES.md` heading, every run |
+
+Leave `notes-title` empty and `release-notes` falls back to the repository name
+from `GITHUB_REPO`. Set it where the repo slug is not what readers should see —
+`versioning-tests` wants "Versioning Tests", not `versioning-tests`.
+
 ### Secrets
 
 Composite actions cannot read `secrets` directly; pass them as inputs.
