@@ -1,9 +1,10 @@
-name: Release
+name: Publish
 description: >-
-  Generate notes from BREAKING/feat/fix commits since the last release, tag
-  vX.Y.Z, force-move the vN major tag, and publish a GitHub Release. Assumes
-  the caller has checked out with fetch-depth 0 and fetch-tags true, and grants
-  the job contents: write.
+  Publish a version: generate notes from BREAKING/feat/fix commits since the
+  last release, tag vX.Y.Z, force-move the vN major tag, and cut a GitHub
+  Release. For an action already listed on the Marketplace, the listing tracks
+  that release automatically. Assumes the caller has checked out with
+  fetch-depth 0 and fetch-tags true, and grants the job contents: write.
 author: lite-actions
 
 inputs:

@@ -9,10 +9,19 @@ instead of five times.
 | `shell-lint` | shellchecks `scripts/` and `tests/` |
 | `conventional-validation` | validates commit messages and branch names |
 | `changelog` | appends `CHANGELOG.md`, regenerates `RELEASE_NOTES.md`, lands both via an auto-merged PR |
-| `release` | tags `vX.Y.Z`, moves `vN`, publishes the GitHub Release |
+| `publish` | tags `vX.Y.Z`, moves `vN`, cuts the GitHub Release that the Marketplace listing tracks |
 
 Every input defaults to what the action repos already do, so a caller that
 passes nothing keeps its current behaviour.
+
+`publish` was called `release` until 2026-08-20. "Release" meant three things
+across these repos — `release-notes` generates notes, `rust-release` builds
+binaries, and this cuts a version — and the ambiguity had already produced a
+wrong code comment. Callers invoke it from a `publish.yml` workflow.
+
+It cuts a GitHub Release and never calls a Marketplace API, because there isn't
+one: the first publish needs a human to accept the terms in the web UI, and
+after that the listing tracks GitHub Releases on its own.
 
 ## Use
 
@@ -48,7 +57,7 @@ edit.
 
 ### Checkout requirements
 
-`changelog` and `release` resolve "since the last release" from `vX.Y.Z` tags,
+`changelog` and `publish` resolve "since the last release" from `vX.Y.Z` tags,
 so they need history *and* tags:
 
 ```yaml
@@ -113,4 +122,4 @@ same constraint.
 Releases are cut from `main` after the merge, never from a PR: squash and
 rebase merges both rewrite the commit SHA, so a tag created at a PR head would
 point at a commit that never lands. Tags are not branch-protected, which is what
-lets `release` run without a PR and approval.
+lets `publish` run without a PR and approval.
