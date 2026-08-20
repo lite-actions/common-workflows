@@ -68,51 +68,46 @@ runs:
       with:
         output-file: ${{ inputs.release-notes-file }}
 
+    # The shell guard that used to skip when tokens were unset is now a step
+    # condition, because the work is split across three steps and one of them
+    # is an action rather than a script.
+    - name: Warn when the tokens are unset
+      if: steps.changelog.outputs.changed == 'true' && (inputs.bot-token == '' || inputs.approve-token == '')
+      shell: bash
+      run: echo "::warning::bot-token / approve-token not set; skipping changelog PR."
+
+    - name: Name the branch
+      id: branch
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
+      shell: bash
+      run: echo "branch=chore/changelog-${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
+
+    # A runner has no signing key. Where the caller's branch requires signed
+    # commits, an unsigned one blocks the pull request outright, so the commit
+    # goes through GitHub's API instead.
+    - name: Commit the changelog
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
+      uses: lite-actions/signed-commit@v1
+      with:
+        branch: ${{ steps.branch.outputs.branch }}
+        create-branch: true
+        base-sha: ${{ github.sha }}
+        message: "docs(changelog): update changelog and release notes"
+        files: |
+          ${{ inputs.changelog-file }}
+          ${{ inputs.release-notes-file }}
+        token: ${{ inputs.bot-token }}
+
     - name: Open, approve and auto-merge changelog PR
-      if: steps.changelog.outputs.changed == 'true'
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.bot-token }}
         APPROVE_TOKEN: ${{ inputs.approve-token }}
-        CHANGELOG_FILE: ${{ inputs.changelog-file }}
-        NOTES_FILE: ${{ inputs.release-notes-file }}
+        BRANCH: ${{ steps.branch.outputs.branch }}
       run: |
         set -euo pipefail
-        if [ -z "${GH_TOKEN:-}" ] || [ -z "${APPROVE_TOKEN:-}" ]; then
-          echo "::warning::bot-token / approve-token not set; skipping changelog PR."
-          exit 0
-        fi
-        branch="chore/changelog-${GITHUB_RUN_ID}"
-        head_sha="$(git rev-parse HEAD)"
-
-        # Branch off the current tip, then commit through the API rather than
-        # with git. A branch requiring signed commits rejects anything a runner
-        # commits, because there is no signing key there - and the PR is blocked
-        # outright, before a merge strategy is chosen, so --squash cannot rescue
-        # it. Commits created via createCommitOnBranch are signed by GitHub, and
-        # unlike the REST contents endpoint it takes both files in one commit.
-        gh api "repos/${GITHUB_REPOSITORY}/git/refs" \
-          -f ref="refs/heads/${branch}" -f sha="${head_sha}" >/dev/null
-
-        # base64 -w0 is GNU-only; this form also works on macOS runners.
-        jq -n \
-          --arg repo "${GITHUB_REPOSITORY}" \
-          --arg branch "${branch}" \
-          --arg oid "${head_sha}" \
-          --arg clpath "${CHANGELOG_FILE}" \
-          --arg clbody "$(base64 < "${CHANGELOG_FILE}" | tr -d '\n')" \
-          --arg rnpath "${NOTES_FILE}" \
-          --arg rnbody "$(base64 < "${NOTES_FILE}" | tr -d '\n')" \
-          '{query:"mutation($input:CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}",
-            variables:{input:{
-              branch:{repositoryNameWithOwner:$repo,branchName:$branch},
-              expectedHeadOid:$oid,
-              message:{headline:"docs(changelog): update changelog and release notes"},
-              fileChanges:{additions:[
-                {path:$clpath,contents:$clbody},
-                {path:$rnpath,contents:$rnbody}]}}}}' \
-          | gh api graphql --input - >/dev/null
-
+        branch="${BRANCH}"
         gh pr create --base main --head "${branch}" \
           --title "docs(changelog): update changelog and release notes" \
           --body "Automated changelog + release-notes update from the latest merge to \`main\`."
