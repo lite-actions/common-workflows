@@ -15,9 +15,18 @@ inputs:
     required: false
     default: RELEASE_NOTES.md
   title:
-    description: Heading used when the changelog file is first created.
+    description: >-
+      Heading written into the changelog file when it is first created. This is
+      the CHANGELOG.md heading, not the release-notes one - see notes-title.
     required: false
     default: Changelog
+  notes-title:
+    description: >-
+      Heading for the release-notes document. Empty uses release-notes' own
+      default, which is the repository name from GITHUB_REPO. Set it where the
+      repo slug is not the name you want readers to see.
+    required: false
+    default: ""
   bot-token:
     description: >-
       User PAT so the branch push and PR creation act as a real user and
@@ -66,6 +75,7 @@ runs:
       if: steps.changelog.outputs.changed == 'true'
       uses: lite-actions/release-notes@v1
       with:
+        title: ${{ inputs.notes-title }}
         output-file: ${{ inputs.release-notes-file }}
 
     # The shell guard that used to skip when tokens were unset is now a step
