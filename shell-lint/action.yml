@@ -20,10 +20,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install ShellCheck
-      shell: bash
-      run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-
     - name: ShellCheck scripts
       shell: bash
       env:
@@ -31,6 +27,10 @@ runs:
         SEVERITY: ${{ inputs.severity }}
       run: |
         set -euo pipefail
+        # shellcheck ships on the ubuntu runner images, so there is nothing to
+        # install. The apt-get that used to be here could hang indefinitely on
+        # an unresponsive mirror, and because lint is a required check it
+        # blocks the PR rather than failing it.
         # -x follows sourced files; warning severity ignores info/style noise
         # (e.g. dynamic source paths shellcheck can't resolve statically).
         # PATHS is deliberately unquoted so the globs expand.
