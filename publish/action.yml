@@ -20,6 +20,14 @@ inputs:
     description: "Explicit version, e.g. 1.2.0 (default: computed from commits)."
     required: false
     default: ""
+  notes-title:
+    description: >-
+      Heading for the release notes used as the GitHub Release body. Empty uses
+      release-notes' own default, the repository name from GITHUB_REPO. Set it
+      to the same value the changelog action uses, or the committed
+      RELEASE_NOTES.md and the Release body will disagree.
+    required: false
+    default: ""
   move-major-tag:
     description: Force-move the vN tag so consumers on @vN get this release.
     required: false
@@ -58,6 +66,7 @@ runs:
       id: notes
       uses: lite-actions/release-notes@v1
       with:
+        title: ${{ inputs.notes-title }}
         from: ${{ inputs.from }}
         to: ${{ inputs.to }}
         version: ${{ inputs.version }}

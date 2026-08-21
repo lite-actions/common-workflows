@@ -85,6 +85,10 @@ first release has no tags either way and is unaffected.
 | `title` | `conventional-changelog` | the `CHANGELOG.md` heading, on first creation |
 | `notes-title` | `release-notes` | the `RELEASE_NOTES.md` heading, every run |
 
+`publish` takes `notes-title` too, and it regenerates the notes itself to use as
+the GitHub Release body. **Pass the same value to both**, or the committed
+`RELEASE_NOTES.md` and the Release body will carry different headings.
+
 Leave `notes-title` empty and `release-notes` falls back to the repository name
 from `GITHUB_REPO`. Set it where the repo slug is not what readers should see —
 `versioning-tests` wants "Versioning Tests", not `versioning-tests`.
