@@ -41,6 +41,9 @@ jobs:
           # Needs to merge PRs across the org. public_repo is enough for the
           # public action repos; a private repo would need full repo scope.
           GH_TOKEN: ${{ secrets.CHANGELOG_BOT_TOKEN }}
+          # Optional. With no webhook the workflow still unsticks PRs; it just
+          # cannot tell anyone beyond the run log and the failed run.
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ORG: lite-actions
           REPOS: >-
             release-notes conventional-validator conventional-changelog
@@ -95,13 +98,61 @@ jobs:
                   ;;
               esac
 
+              # Gather diagnostics before merging, because merging changes the
+              # PR's state and some of this becomes harder to reconstruct.
+              detail="$(gh pr view "${number}" --repo "${ORG}/${repo}" \
+                --json title,url,headRefName,headRefOid)"
+              title="$(jq -r '.title' <<<"${detail}")"
+              url="$(jq -r '.url' <<<"${detail}")"
+              branch="$(jq -r '.headRefName' <<<"${detail}")"
+              sha="$(jq -r '.headRefOid' <<<"${detail}")"
+
+              # The workflow runs on the head commit give the workflow name, the
+              # event that triggered it, and when each finished. The latest
+              # completion is the moment the PR actually became mergeable, which
+              # is the number that matters: ready at T, still open at T+age.
+              runs="$(gh api "repos/${ORG}/${repo}/actions/runs?head_sha=${sha}&per_page=20" \
+                --jq '[.workflow_runs[] | {name, event, conclusion, updated_at}]' 2>/dev/null || echo '[]')"
+              ready_at="$(jq -r 'map(select(.conclusion != null) | .updated_at) | sort | last // ""' <<<"${runs}")"
+              runs_text="$(jq -r '.[] | "• \(.name) [\(.event)] \(.conclusion) at \(.updated_at)"' <<<"${runs}")"
+              [ -n "${runs_text}" ] || runs_text="• (no workflow runs found for this commit)"
+
+              if [ -n "${ready_at}" ]; then
+                ready_min=$(( (now - $(date -u -d "${ready_at}" +%s)) / 60 ))
+                ready_line="${ready_at} (${ready_min}m ago)"
+              else
+                ready_line="unknown"
+              fi
+
               echo "::warning::${repo}#${number} was ready ${age_min}m ago and auto-merge did not fire; merging it."
               if gh pr merge "${number}" --repo "${ORG}/${repo}" "${flag}" --delete-branch; then
                 unstuck=$((unstuck + 1))
+                outcome="Merged by unstick-auto-merge (${method})."
                 echo "- **${repo}#${number}** merged after ${age_min}m stalled (${method})" >> "${GITHUB_STEP_SUMMARY}"
               else
+                outcome=":rotating_light: Merge FAILED - needs a human."
                 echo "::error::${repo}#${number}: merge failed. Needs a human."
                 echo "- **${repo}#${number}** merge FAILED after ${age_min}m - needs a human" >> "${GITHUB_STEP_SUMMARY}"
+              fi
+
+              if [ -n "${SLACK_WEBHOOK_URL:-}" ]; then
+                text="$(printf '%s\n%s\n\n*Repository:* %s/%s\n*Branch:* %s\n*Commit:* %s\n*Opened:* %s (%sm ago)\n*Ready since:* %s\n*Merge method:* %s\n*Detected:* %s\n\n*Workflows on the head commit:*\n%s\n\n*Outcome:* %s' \
+                  ":warning: *Auto-merge stalled* — <${url}|${ORG}/${repo}#${number}>" \
+                  "${title}" \
+                  "${ORG}" "${repo}" \
+                  "${branch}" \
+                  "${sha:0:8}" \
+                  "${created}" "${age_min}" \
+                  "${ready_line}" \
+                  "${method}" \
+                  "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+                  "${runs_text}" \
+                  "${outcome}")"
+                if ! jq -n --arg t "${text}" '{text: $t}' \
+                     | curl -sf -X POST -H 'Content-type: application/json' \
+                       --data @- "${SLACK_WEBHOOK_URL}" >/dev/null; then
+                  echo "::warning::Slack notification failed for ${repo}#${number}."
+                fi
               fi
             done < <(gh pr list --repo "${ORG}/${repo}" --state open --limit 50 \
               --json number,createdAt,autoMergeRequest,mergeStateStatus,mergeable \
