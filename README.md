@@ -120,6 +120,11 @@ Composite actions cannot read `secrets` directly; pass them as inputs.
     approve-token: ${{ secrets.CHANGELOG_APPROVE_TOKEN }}
 ```
 
+`bot-token` is required. **`approve-token` is only required where the branch
+requires an approving review**; leave it empty on a branch that does not — a
+private repo without protection, for instance — and the approval step is
+skipped. The merge then succeeds on its own.
+
 Both are user PATs by necessity: `GITHUB_TOKEN` does not trigger required
 checks on a pushed branch and cannot approve a PR at all, and a PR's author or
 last pusher cannot self-approve — hence two distinct identities.
