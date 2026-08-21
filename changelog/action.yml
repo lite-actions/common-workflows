@@ -42,8 +42,11 @@ inputs:
     default: squash
   approve-token:
     description: >-
-      Second identity used to approve. A PR author or last pusher cannot
-      self-approve, and GITHUB_TOKEN cannot approve at all.
+      Second identity used to approve, required only where the branch requires
+      an approving review. A PR author or last pusher cannot self-approve, and
+      GITHUB_TOKEN cannot approve at all. Leave empty on a branch with no such
+      requirement - a private repo without protection, for instance - and the
+      approval step is skipped.
     required: false
     default: ""
 
@@ -89,13 +92,13 @@ runs:
     # condition, because the work is split across three steps and one of them
     # is an action rather than a script.
     - name: Warn when the tokens are unset
-      if: steps.changelog.outputs.changed == 'true' && (inputs.bot-token == '' || inputs.approve-token == '')
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token == ''
       shell: bash
-      run: echo "::warning::bot-token / approve-token not set; skipping changelog PR."
+      run: echo "::warning::bot-token not set; skipping changelog PR."
 
     - name: Name the branch
       id: branch
-      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != ''
       shell: bash
       run: echo "branch=chore/changelog-${GITHUB_RUN_ID}" >> "${GITHUB_OUTPUT}"
 
@@ -103,7 +106,7 @@ runs:
     # commits, an unsigned one blocks the pull request outright, so the commit
     # goes through GitHub's API instead.
     - name: Commit the changelog
-      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != ''
       uses: lite-actions/signed-commit@v1
       with:
         branch: ${{ steps.branch.outputs.branch }}
@@ -116,7 +119,7 @@ runs:
         token: ${{ inputs.bot-token }}
 
     - name: Open, approve and auto-merge changelog PR
-      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != '' && inputs.approve-token != ''
+      if: steps.changelog.outputs.changed == 'true' && inputs.bot-token != ''
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.bot-token }}
@@ -137,8 +140,17 @@ runs:
           --title "docs(changelog): update changelog and release notes" \
           --body "Automated changelog + release-notes update from the latest merge to \`main\`."
 
-        GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
-          --body "Automated approval of changelog update."
+        # Approving needs a second identity, because a PR's author and last
+        # pusher cannot approve it. Where the branch requires no review - a
+        # private repo without protection, for instance - there is nothing to
+        # satisfy, so approval is skipped rather than being made mandatory.
+        if [ -n "${APPROVE_TOKEN:-}" ]; then
+          GH_TOKEN="${APPROVE_TOKEN}" gh pr review "${branch}" --approve \
+            --body "Automated approval of changelog update."
+        else
+          echo "approve-token not set; skipping approval."
+          echo "The merge succeeds only if the branch requires no approving review."
+        fi
 
         gh pr merge "${branch}" --auto "--${MERGE_METHOD}" --delete-branch
 
