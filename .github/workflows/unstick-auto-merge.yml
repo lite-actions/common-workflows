@@ -126,9 +126,13 @@ jobs:
               "${runs_text}" \
               "${outcome}")"
 
-            if ! jq -n --arg t "${text}" '{text: $t}' \
+            # Say so either way. A tool built because a silent success looked
+            # like a silent failure should not have that property itself.
+            if jq -n --arg t "${text}" '{text: $t}' \
                  | curl -sf -X POST -H 'Content-type: application/json' \
                    --data @- "${SLACK_WEBHOOK_URL}" >/dev/null; then
+              echo "Slack notified for ${repo}#${number} (ready since ${ready_line})."
+            else
               echo "::warning::Slack notification failed for ${repo}#${number}."
             fi
           }
